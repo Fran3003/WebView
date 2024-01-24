@@ -1,117 +1,109 @@
-/**
- * Sample React Native App
- * https://github.com/facebook/react-native
- *
- * @format
- */
+import React, { useEffect, useRef } from 'react';
+import { PermissionsAndroid, StyleSheet, View } from 'react-native';
+import { WebView } from 'react-native-webview';
+import Geolocation from '@react-native-community/geolocation';
 
-import React from 'react';
-import type {PropsWithChildren} from 'react';
-import {
-  SafeAreaView,
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  useColorScheme,
-  View,
-} from 'react-native';
+const requestLocationPermission = async () => {
+  try {
+    const granted = await PermissionsAndroid.request(
+      PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+      {
+        title: 'Geolocation Permission',
+        message: 'Can we access your location?',
+        buttonNeutral: 'Ask Me Later',
+        buttonNegative: 'Cancel',
+        buttonPositive: 'OK',
+      },
+    );
+    return granted === PermissionsAndroid.RESULTS.GRANTED;
+  } catch (err) {
+    console.warn(err);
+    return false;
+  }
+};
 
-import {
-  Colors,
-  DebugInstructions,
-  Header,
-  LearnMoreLinks,
-  ReloadInstructions,
-} from 'react-native/Libraries/NewAppScreen';
+const getGeoLocationJS = () => {
+  const requestPermissionsFromWebView = `
+    window.requestPermissionsFromWebView = function() {
+      window.ReactNativeWebView.postMessage(JSON.stringify({ event: 'requestPermissions' }));
+    };
+  `;
 
-type SectionProps = PropsWithChildren<{
-  title: string;
-}>;
+  const getCurrentPosition = `
+    navigator.geolocation.getCurrentPosition = (success, error, options) => {
+      window.requestPermissionsFromWebView(); // Llama a la función para solicitar permisos desde la WebView
+      window.ReactNativeWebView.postMessage(JSON.stringify({ event: 'getCurrentPosition', options: options }));
+    };
+  `;
 
-function Section({children, title}: SectionProps): React.JSX.Element {
-  const isDarkMode = useColorScheme() === 'dark';
-  return (
-    <View style={styles.sectionContainer}>
-      <Text
-        style={[
-          styles.sectionTitle,
-          {
-            color: isDarkMode ? Colors.white : Colors.black,
-          },
-        ]}>
-        {title}
-      </Text>
-      <Text
-        style={[
-          styles.sectionDescription,
-          {
-            color: isDarkMode ? Colors.light : Colors.dark,
-          },
-        ]}>
-        {children}
-      </Text>
-    </View>
-  );
-}
+  const watchPosition = `
+    navigator.geolocation.watchPosition = (success, error, options) => {
+      window.requestPermissionsFromWebView(); // Llama a la función para solicitar permisos desde la WebView
+      window.ReactNativeWebView.postMessage(JSON.stringify({ event: 'watchPosition', options: options }));
+    };
+  `;
 
-function App(): React.JSX.Element {
-  const isDarkMode = useColorScheme() === 'dark';
+  const clearWatch = `
+    navigator.geolocation.clearWatch = (watchID) => {
+      window.ReactNativeWebView.postMessage(JSON.stringify({ event: 'clearWatch', watchID: watchID }));
+    };
+  `;
 
-  const backgroundStyle = {
-    backgroundColor: isDarkMode ? Colors.darker : Colors.lighter,
+  console.log('GeoLocationJS executed'); 
+
+  return `
+    (function() {
+      ${requestPermissionsFromWebView}
+      ${getCurrentPosition}
+      ${watchPosition}
+      ${clearWatch}
+    })();
+  `;
+};
+
+const App = () => {
+  const webViewRef = useRef<WebView>(null);
+
+  useEffect(() => {
+    requestLocationPermission();
+  }, []);
+
+  const onMessage = (event: { nativeEvent: { data: any; }; }) => {
+    const { data } = event.nativeEvent;
+  
+    if (data === 'requestGeolocation') {
+      Geolocation.getCurrentPosition(
+        (position) => {
+          if (webViewRef.current) {
+            webViewRef.current.postMessage(JSON.stringify({ event: 'currentPosition', data: position }));
+          }
+        },
+        (error) => {
+          console.warn(error.code, error.message);
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 },
+      );
+    }
   };
 
   return (
-    <SafeAreaView style={backgroundStyle}>
-      <StatusBar
-        barStyle={isDarkMode ? 'light-content' : 'dark-content'}
-        backgroundColor={backgroundStyle.backgroundColor}
+    <View style={styles.container}>
+      <WebView
+        ref={webViewRef}
+        source={{ uri: 'https://power-app-engine.vercel.app/flake/bIt5ItBs9IIuBtzziqyJ.4vqLSttZiqGhrNRea8s5' }}
+        onMessage={(event) => onMessage(event)} 
+        javaScriptEnabled={true}
+        injectedJavaScript={getGeoLocationJS()}
       />
-      <ScrollView
-        contentInsetAdjustmentBehavior="automatic"
-        style={backgroundStyle}>
-        <Header />
-        <View
-          style={{
-            backgroundColor: isDarkMode ? Colors.black : Colors.white,
-          }}>
-          <Section title="Step One">
-            Edit <Text style={styles.highlight}>App.tsx</Text> to change this
-            screen and then come back to see your edits.
-          </Section>
-          <Section title="See Your Changes">
-            <ReloadInstructions />
-          </Section>
-          <Section title="Debug">
-            <DebugInstructions />
-          </Section>
-          <Section title="Learn More">
-            Read the docs to discover what to do next:
-          </Section>
-          <LearnMoreLinks />
-        </View>
-      </ScrollView>
-    </SafeAreaView>
+    </View>
   );
-}
+};
+
 
 const styles = StyleSheet.create({
-  sectionContainer: {
-    marginTop: 32,
-    paddingHorizontal: 24,
-  },
-  sectionTitle: {
-    fontSize: 24,
-    fontWeight: '600',
-  },
-  sectionDescription: {
-    marginTop: 8,
-    fontSize: 18,
-    fontWeight: '400',
-  },
-  highlight: {
-    fontWeight: '700',
+  container: {
+    flex: 1,
+    backgroundColor: 'black',
   },
 });
 
